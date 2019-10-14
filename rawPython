@@ -1,0 +1,116 @@
+from collections import defaultdict 
+from time import process_time
+from itertools import chain, starmap
+#starmap makes an iterator that computes the function using arguments obtained from the iterable.
+
+import numpy as np
+import pandas as pd
+import json
+import base64
+import sys
+import statistics
+
+
+#The function “flatten_iterative_solution” solved the nested data with an iterative approach. The idea 
+#is that we scan each element in the data file and unpack just one level if the element is nested. 
+#We keep iterating until all values are atomic elements (no dictionary or list).
+
+def flatten_iterative_solution(dictionary):
+    """Flatten a nested data file"""
+
+    def unpack(parent_key, parent_value):
+        """Unpack one level of nesting"""
+        
+        if isinstance(parent_value, dict):
+            for key, value in parent_value.items():
+                temp1 = parent_key + '_' + key
+                yield temp1, value
+        elif isinstance(parent_value, list):
+            i = 0 
+            for value in parent_value:
+                temp2 = parent_key + '_'+str(i) 
+                i = i + 1
+                yield temp2, value
+        else:
+            yield parent_key, parent_value    
+
+            
+    # Keep iterating until the termination condition is satisfied
+    while True:
+        # Keep unpacking until all values are atomic elements (not dictionary or list)
+        dictionary = dict(chain.from_iterable(starmap(unpack, dictionary.items())))
+        # Terminate condition: not any value in dictionary or list
+        if not any(isinstance(value, dict) for value in dictionary.values()) and \
+           not any(isinstance(value, list) for value in dictionary.values()):
+                break
+
+    return dictionary
+
+
+def base64_to_json (base64array):
+    #decode base64 to json
+    reg_list = []   #  empty regular list
+    for row in range (len(base64array)): 
+        temp = base64.b64decode(base64array[row], altchars="-_")
+        reg_list.append(temp)
+        
+    return reg_list
+
+
+def median_in_Polygon(flat_dict): 
+
+    for x in flat_dict:
+        length = len(str(flat_dict[x]))
+        
+        if (length >= 300):   #comments should be limited to 299 characters
+            pairs = flat_dict[x].replace("POLYGON","")  #The replace() method replaces a string with another string.
+            pairs = pairs.replace("(","")   # remove "(" and ")" with replace() method
+            pairs = pairs.replace(")","")
+            pair_list = [pair.split() for pair in pairs.split(',')]   #The split() method splits a string into a list
+            #with the help of transposed dataframe, to calculate median values. 
+            df = pd.DataFrame([[float(pair[0]) for pair in pair_list],[float(pair[1]) for pair in pair_list]]).T
+            a = df[0].median()
+            b = df[1].median()
+            #print(a, "br", b)
+            flat_dict[x] = (a,b)
+        
+    return flat_dict
+
+def parse_JSON(reg_list):
+    #If you have a JSON string, you can parse it by using the json.loads() method, result will be a Python dictionary.
+    for x in reg_list:
+        d_dict = json.loads(x)
+
+    return d_dict
+
+
+df = pd.DataFrame()
+t1_start = process_time()  #start timer
+
+# Access data store
+data_store = pd.HDFStore('processed_10rows.h5')
+# Retrieve data using key
+preprocessed_df = data_store['10rows_df']
+data_store.close()
+
+#initializing
+start = 0
+end = start + 1
+rows = start + 10  #we have just 10 rows of data
+
+while (start < rows):
+    columnBase64 = preprocessed_df.loc[start: end,'B']  #decode column 'B', contains binary data, Base64
+    columnBase64_toArray = columnBase64.values   #df to numpy array
+    regular_list = base64_to_json(columnBase64_toArray)   
+    data_dict = parse_JSON(regular_list)
+    flatten_dict = flatten_iterative_solution(data_dict)  
+    result_dict = median_in_Polygon(flatten_dict)  
+    df = df.append(result_dict, ignore_index=True)
+    start = start + 1
+    end = start + 1
+
+# Stop the timer 
+t1_stop = process_time() 
+print("Elapsed time decode, 10 rows, in seconds:", t1_stop-t1_start)  #typically 1 s
+print(df.shape)
+df   
